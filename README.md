@@ -152,3 +152,154 @@ The root module does not declare a variable named "ec2-sg"
 ```
 
 **This is harmless.** Variables like `ec2-sg`, `ec2-iam-role`, `ec2-iam-role-policy`, `ec2-iam-instance-profile`, and `ec2-name` are vpc-ec2-specific and are simply ignored by the eks module. No action required.
+
+---
+
+## Step-by-Step Deployment Guide
+
+### Phase 1 — Prerequisites
+Ensure the following tools are installed and configured before starting:
+
+- **AWS CLI** — configured with valid credentials (`aws configure`)
+- **Terraform** — v1.13.x
+- **Docker** — installed and logged into DockerHub (`docker login`)
+- **kubectl** — Kubernetes CLI
+
+---
+
+### Phase 2 — Create S3 Bucket for Terraform State
+Both modules use an S3 backend for remote state. Create the bucket before running `terraform init`.
+
+```bash
+aws s3api create-bucket \
+  --bucket my-eks-tf-state \
+  --region us-east-1
+
+aws s3api put-bucket-versioning \
+  --bucket my-eks-tf-state \
+  --versioning-configuration Status=Enabled
+
+aws s3api put-bucket-encryption \
+  --bucket my-eks-tf-state \
+  --server-side-encryption-configuration \
+  '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+```
+
+Then replace `YOUR_S3_BUCKET_NAME` in both `vpc-ec2/backend.tf` and `eks/backend.tf` with your bucket name.
+
+---
+
+### Phase 3 — Build and Push Docker Image
+Push the application image to DockerHub before the cluster exists so it is ready to pull on first deploy.
+
+```bash
+cd app
+./build-push.sh latest
+cd ..
+```
+
+---
+
+### Phase 4 — Deploy VPC + EC2
+This creates the networking foundation everything else depends on.
+
+```bash
+cd vpc-ec2
+terraform init
+terraform plan -var-file=variables.tfvars
+terraform apply -var-file=variables.tfvars
+```
+
+**Resources created:** VPC · 3 public subnets · 3 private subnets · Internet Gateway · NAT Gateway · route tables · security groups · EC2 jump server
+
+---
+
+### Phase 5 — Deploy EKS Cluster + Tools
+Run only after Phase 4 is fully complete. The EKS module looks up the VPC and security group by tag — they must already exist in AWS.
+
+```bash
+cd ../eks
+terraform init
+terraform plan -var-file=variables.tfvars
+terraform apply -var-file=variables.tfvars
+```
+
+**Resources created:** EKS cluster · on-demand and spot node groups · OIDC provider · IAM roles · AWS Load Balancer Controller · ArgoCD · Prometheus · Grafana
+
+> ⚠️ This step takes **15–20 minutes**. EKS cluster provisioning is slow.
+
+---
+
+### Phase 6 — Connect kubectl to the Cluster
+The cluster has `endpoint-public-access = false`, meaning the Kubernetes API is only reachable from within the VPC. All `kubectl` commands must be run from the **EC2 jump server** created in Phase 4.
+
+```bash
+# SSH into the EC2 jump server
+ssh -i your-key.pem ubuntu@<EC2-PUBLIC-IP>
+
+# Configure kubectl from inside the EC2
+aws eks update-kubeconfig \
+  --name dev-medium-eks-cluster \
+  --region us-east-1
+
+# Verify connectivity
+kubectl get nodes
+```
+
+---
+
+### Phase 7 — Deploy the App via ArgoCD
+From the EC2 jump server, apply the ArgoCD Application manifest. ArgoCD watches the `k8s/` folder in this repo and automatically deploys all manifests.
+
+```bash
+kubectl apply -f k8s/argocd-app.yaml
+```
+
+ArgoCD deploys the following in order:
+1. `namespace.yaml` — creates the `flask-demo` namespace
+2. `deployment.yaml` — pulls `thiexco/flask-demo:latest` from DockerHub, 2 replicas
+3. `service.yaml` — ClusterIP service on port 80
+4. `ingress.yaml` — provisions an internet-facing AWS ALB
+5. `servicemonitor.yaml` — Prometheus begins scraping `/metrics` every 15s
+
+---
+
+### Phase 8 — Access the App
+```bash
+# Wait ~2 minutes for the ALB to provision, then get its DNS name
+kubectl get ingress -n flask-demo
+
+# Open in browser
+http://<ALB-DNS-NAME>
+```
+
+---
+
+### Execution Order Summary
+
+```
+Phase 1       Phase 2       Phase 3       Phase 4       Phase 5
+Prerequisites  S3 Bucket     Docker Push   vpc-ec2       eks
+(tools)        (tf state)    (DockerHub)   apply         apply
+     │              │              │            │             │
+     └──────────────┴──────────────┴────────────┴─────────────┘
+                                                              │
+                                                         Phase 6
+                                                     kubectl config
+                                                    (from EC2 only)
+                                                              │
+                                                         Phase 7
+                                                      ArgoCD apply
+                                                              │
+                                                         Phase 8
+                                                        App Live ✅
+```
+
+### Key Rules
+| Rule | Reason |
+|---|---|
+| S3 bucket before `terraform init` | Backend needs a real bucket to store state |
+| `vpc-ec2` before `eks` | EKS plan looks up VPC and SG by tag — they must exist |
+| Docker push before apply | EKS pulls the image on pod creation |
+| `kubectl` from EC2 only | Cluster API endpoint is private (VPC-only) |
+| ArgoCD apply last | Needs the cluster running to accept the manifest |
