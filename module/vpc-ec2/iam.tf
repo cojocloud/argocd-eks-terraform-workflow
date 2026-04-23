@@ -73,3 +73,21 @@ resource "aws_iam_instance_profile" "ec2-instance-profile" {
   name = var.ec2-iam-instance-profile
   role = aws_iam_role.iam-role.name
 }
+
+resource "aws_iam_role_policy" "eks-access-policy" {
+  name = "eks-access"
+  role = aws_iam_role.iam-role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "eks:DescribeCluster",
+        "eks:ListClusters",
+        "eks:AccessKubernetesApi"
+      ]
+      Resource = "*"
+    }]
+  })
+}
