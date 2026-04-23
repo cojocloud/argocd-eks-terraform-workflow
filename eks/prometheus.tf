@@ -34,9 +34,9 @@ resource "helm_release" "prometheus-helm" {
   }
 
   set {
-  name  = "prometheus.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-scheme"
-  value = "internet-facing"
-}
+    name  = "prometheus.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-scheme"
+    value = "internet-facing"
+  }
 
 
   depends_on = [helm_release.argocd]

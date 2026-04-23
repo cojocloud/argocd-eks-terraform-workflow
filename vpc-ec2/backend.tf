@@ -11,7 +11,7 @@ terraform {
     }
   }
   backend "s3" {
-    bucket       = "dev-aman-tf-bucket"
+    bucket       = "YOUR_S3_BUCKET_NAME"
     region       = "us-east-1"
     key          = "EKS-ArgoCD-AWS-LB-Controller-Terraform/vpc-ec2.tfstate"
     use_lockfile = true

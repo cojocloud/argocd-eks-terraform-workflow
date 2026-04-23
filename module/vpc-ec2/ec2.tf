@@ -1,7 +1,6 @@
 resource "aws_instance" "ec2" {
-  ami = data.aws_ami.ami.id
-  instance_type = "t2.micro"
-  availability_zone = "us-east-2a"
+  ami                  = data.aws_ami.ami.id
+  instance_type        = "t2.micro"
   iam_instance_profile = aws_iam_instance_profile.ec2-instance-profile.id
   subnet_id = aws_subnet.public-subnet[0].id
   vpc_security_group_ids = [aws_security_group.ec2-sg.id]
@@ -11,7 +10,7 @@ resource "aws_instance" "ec2" {
   }
 
   tags = {
-    Name = "eks-server-deploy"
+    Name = var.ec2-name
   }
 
   user_data = <<-EOF

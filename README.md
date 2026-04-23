@@ -69,3 +69,85 @@ This project is licensed under the [MIT License](LICENSE).
 ## Contact
 
 If you have any questions, suggestions, or feedback, please feel free to join the [Discord Server](https://lnkd.in/dsEdxpst).
+
+---
+
+## Terraform Plan — Errors Encountered and Fixes Applied
+
+The following errors and issues were found and resolved before a clean plan could be produced.
+
+---
+
+### 1. Missing `tls` and `random` provider declarations (`eks/backend.tf`)
+
+**Error** — `terraform init` succeeded but `terraform validate` would have failed at runtime because `module/eks/gather.tf` uses a `data "tls_certificate"` resource and `module/eks/iam.tf` uses `resource "random_integer"`, neither of which had their providers declared in the root `eks/` module.
+
+**Fix** — Added `tls` (`~> 4.0`) and `random` (`~> 3.0`) to `required_providers` in `eks/backend.tf`.
+
+---
+
+### 2. Hardcoded `availability_zone = "us-east-2a"` in EC2 resource (`module/vpc-ec2/ec2.tf`)
+
+**Error** — The EC2 jump server had `availability_zone = "us-east-2a"` hardcoded, conflicting with the `us-east-1` region and the subnet it was being placed in.
+
+**Fix** — Removed the `availability_zone` argument entirely. When `subnet_id` is specified, AWS automatically places the instance in that subnet's AZ, making the explicit argument redundant.
+
+---
+
+### 3. Missing variables in `vpc-ec2/variables.tfvars`
+
+**Error** — Running `terraform plan` from the `vpc-ec2/` directory would fail with `No value for required variable` because five variables declared in `vpc-ec2/variables.tf` were absent from `vpc-ec2/variables.tfvars`: `ec2-sg`, `cluster-name`, `ec2-iam-role`, `ec2-iam-role-policy`, `ec2-iam-instance-profile`, and `ec2-name`.
+
+**Fix** — Added all five missing variable values to `vpc-ec2/variables.tfvars`, matching the values already present in the root `variables.tfvars`.
+
+---
+
+### 4. S3 backend placeholder bucket prevents `terraform init` (`vpc-ec2/backend.tf`, `eks/backend.tf`)
+
+**Error** — Both modules referenced `dev-aman-tf-bucket` (the original author's S3 bucket) as the Terraform state backend. Running `terraform init` against a non-existent or inaccessible bucket causes:
+```
+Error: Failed to get existing workspaces: S3 bucket does not exist
+```
+
+**Fix (permanent)** — Replaced the hardcoded bucket name with `YOUR_S3_BUCKET_NAME` as a clear placeholder. Before running `terraform init` for real, create an S3 bucket in `us-east-1` with versioning and encryption enabled, then substitute the placeholder with your bucket name.
+
+**Fix (for plan preview only)** — To run `terraform plan` without a real S3 bucket, a temporary `override.tf` was added to each module directory to swap the backend to local state:
+```hcl
+terraform {
+  backend "local" {}
+}
+```
+Then `terraform init -reconfigure` was run, followed by `terraform plan`. The `override.tf` files are listed in `.gitignore` and should be removed before deploying for real.
+
+---
+
+### 5. `eks` plan: `no matching EC2 VPC found` / `no matching EC2 Security Group found`
+
+**Error** — Running `terraform plan` in the `eks/` module produced:
+```
+Error: no matching EC2 VPC found
+Error: no matching EC2 Security Group found
+```
+
+**This is expected, not a bug.** The `eks` module uses `data` sources to look up the VPC and security group by tag/name. Those resources are created by the `vpc-ec2` module and must exist in AWS before the `eks` plan can complete. This enforces the correct deployment order.
+
+**Resolution** — Always apply `vpc-ec2` before planning or applying `eks`:
+```bash
+# Step 1 — run from vpc-ec2/
+terraform apply -var-file=variables.tfvars
+
+# Step 2 — run from eks/ only after Step 1 completes
+terraform apply -var-file=../variables.tfvars
+```
+
+---
+
+### 6. `eks` plan: warnings about undeclared variables
+
+**Warning** — Passing the shared root `variables.tfvars` to the `eks` module produces warnings like:
+```
+Warning: Value for undeclared variable
+The root module does not declare a variable named "ec2-sg"
+```
+
+**This is harmless.** Variables like `ec2-sg`, `ec2-iam-role`, `ec2-iam-role-policy`, `ec2-iam-instance-profile`, and `ec2-name` are vpc-ec2-specific and are simply ignored by the eks module. No action required.

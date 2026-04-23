@@ -13,9 +13,17 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 2.10.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
   backend "s3" {
-    bucket       = "dev-aman-tf-bucket"
+    bucket       = "YOUR_S3_BUCKET_NAME"
     region       = "us-east-1"
     key          = "EKS-ArgoCD-AWS-LB-Controller-Terraform/eks.tfstate"
     use_lockfile = true

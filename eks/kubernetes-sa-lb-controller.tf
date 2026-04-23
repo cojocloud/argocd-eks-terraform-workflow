@@ -1,6 +1,6 @@
 resource "aws_iam_policy" "lb-controller-policy" {
-  name        = "AWSLoadBalancerControllerIAMPolicy"
-  policy      = file("iam_policy.json")
+  name   = "AWSLoadBalancerControllerIAMPolicy"
+  policy = file("iam_policy.json")
 }
 
 resource "aws_iam_role" "lb_controller_role" {

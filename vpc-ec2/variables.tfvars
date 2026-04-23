@@ -16,3 +16,13 @@ private-rt-name       = "private-route-table"
 eip-name              = "elasticip-ngw"
 ngw-name              = "ngw"
 eks-sg                = "eks-sg"
+ec2-sg                = "ec2-sg"
+cluster-name          = "eks-cluster"
+
+# IAM
+ec2-iam-role             = "ec2-ssm-role"
+ec2-iam-role-policy      = "ec2-ssm-role-policy"
+ec2-iam-instance-profile = "ec2-ssm-instance-profile"
+
+# EC2
+ec2-name = "eks-deploy-server"
