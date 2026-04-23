@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>flask-demo | EKS + ArgoCD</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+    .hero .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      background: #1a2332;
+      border: 1px solid #30363d;
+      border-radius: 999px;
+      padding: .3rem .9rem;
+      font-size: .78rem;
+      color: #7ee787;
+      margin-bottom: 1.4rem;
+      letter-spacing: .04em;
+    }
+    .hero .badge::before {
+      content: '';
+      width: 8px; height: 8px;
+      background: #7ee787;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .3; }
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 700;
+      background: linear-gradient(135deg, #58a6ff 0%, #a371f7 50%, #f778ba 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.2;
+      margin-bottom: .8rem;
+    }
+    .hero p {
+      color: #8b949e;
+      font-size: 1.05rem;
+      max-width: 480px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    /* ── Stack cards ── */
+    .stack {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      width: 100%;
+      max-width: 780px;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 1.2rem 1rem;
+      text-align: center;
+      transition: border-color .2s, transform .2s;
+      cursor: default;
+    }
+    .card:hover {
+      border-color: #58a6ff;
+      transform: translateY(-3px);
+    }
+    .card .icon {
+      font-size: 2rem;
+      margin-bottom: .55rem;
+      display: block;
+    }
+    .card .name {
+      font-size: .82rem;
+      font-weight: 600;
+      color: #e6edf3;
+      margin-bottom: .25rem;
+    }
+    .card .desc {
+      font-size: .72rem;
+      color: #6e7681;
+    }
+
+    /* ── Info strip ── */
+    .info-strip {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+      max-width: 780px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 1.2rem 2rem;
+      margin-bottom: 2rem;
+    }
+    .info-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .2rem;
+    }
+    .info-item .label {
+      font-size: .7rem;
+      color: #6e7681;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .info-item .value {
+      font-size: .9rem;
+      font-weight: 600;
+      color: #58a6ff;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* ── Endpoints ── */
+    .endpoints {
+      width: 100%;
+      max-width: 780px;
+    }
+    .endpoints h2 {
+      font-size: .8rem;
+      color: #6e7681;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      margin-bottom: .75rem;
+    }
+    .endpoint-list {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+    .endpoint {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: .7rem 1rem;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color .2s;
+    }
+    .endpoint:hover { border-color: #58a6ff; }
+    .method {
+      font-size: .72rem;
+      font-weight: 700;
+      font-family: monospace;
+      padding: .2rem .55rem;
+      border-radius: 5px;
+      background: #1f6feb33;
+      color: #58a6ff;
+      min-width: 42px;
+      text-align: center;
+    }
+    .path {
+      font-family: 'Courier New', monospace;
+      font-size: .88rem;
+      color: #e6edf3;
+      flex: 1;
+    }
+    .ep-desc {
+      font-size: .75rem;
+      color: #6e7681;
+    }
+
+    footer {
+      margin-top: 3rem;
+      font-size: .74rem;
+      color: #484f58;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="hero">
+    <div class="badge">App running &amp; healthy</div>
+    <h1>flask-demo on EKS</h1>
+    <p>A containerized Python app deployed to AWS EKS via GitOps with ArgoCD and monitored by Prometheus &amp; Grafana.</p>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <span class="icon">☸️</span>
+      <div class="name">Amazon EKS</div>
+      <div class="desc">Managed Kubernetes</div>
+    </div>
+    <div class="card">
+      <span class="icon">🔄</span>
+      <div class="name">ArgoCD</div>
+      <div class="desc">GitOps delivery</div>
+    </div>
+    <div class="card">
+      <span class="icon">📊</span>
+      <div class="name">Prometheus</div>
+      <div class="desc">Metrics &amp; alerting</div>
+    </div>
+    <div class="card">
+      <span class="icon">📈</span>
+      <div class="name">Grafana</div>
+      <div class="desc">Dashboards</div>
+    </div>
+    <div class="card">
+      <span class="icon">🏗️</span>
+      <div class="name">Terraform</div>
+      <div class="desc">Infrastructure as Code</div>
+    </div>
+  </div>
+
+  <div class="info-strip">
+    <div class="info-item">
+      <span class="label">App</span>
+      <span class="value">flask-demo</span>
+    </div>
+    <div class="info-item">
+      <span class="label">Image</span>
+      <span class="value">thiexco/flask-demo</span>
+    </div>
+    <div class="info-item">
+      <span class="label">Region</span>
+      <span class="value">us-east-1</span>
+    </div>
+    <div class="info-item">
+      <span class="label">Runtime</span>
+      <span class="value">Python {{ python_version }}</span>
+    </div>
+    <div class="info-item">
+      <span class="label">Host</span>
+      <span class="value">{{ hostname }}</span>
+    </div>
+  </div>
+
+  <div class="endpoints">
+    <h2>Available endpoints</h2>
+    <div class="endpoint-list">
+      <a class="endpoint" href="/">
+        <span class="method">GET</span>
+        <span class="path">/</span>
+        <span class="ep-desc">This page</span>
+      </a>
+      <a class="endpoint" href="/health">
+        <span class="method">GET</span>
+        <span class="path">/health</span>
+        <span class="ep-desc">Liveness &amp; readiness probe</span>
+      </a>
+      <a class="endpoint" href="/metrics">
+        <span class="method">GET</span>
+        <span class="path">/metrics</span>
+        <span class="ep-desc">Prometheus metrics</span>
+      </a>
+    </div>
+  </div>
+
+  <footer>Deployed with ❤️ using Terraform · ArgoCD · AWS EKS</footer>
+
+</body>
+</html>

@@ -1,6 +1,14 @@
+import platform
+import socket
 import time
-from flask import Flask, jsonify, request, g
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+
+from flask import Flask, g, jsonify, render_template, request
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Histogram,
+    generate_latest,
+)
 
 app = Flask(__name__)
 
@@ -36,12 +44,10 @@ def after_request(response):
 
 @app.route("/")
 def index():
-    return jsonify(
-        {
-            "app": "flask-demo",
-            "message": "Hello from EKS! Deployed via ArgoCD.",
-            "status": "ok",
-        }
+    return render_template(
+        "index.html",
+        hostname=socket.gethostname(),
+        python_version=platform.python_version(),
     )
 
 
