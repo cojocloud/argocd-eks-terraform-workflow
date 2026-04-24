@@ -320,3 +320,175 @@ Prerequisites  S3 Bucket     Docker Push   vpc-ec2       eks
 | Docker push before apply | EKS pulls the image on pod creation |
 | `kubectl` from EC2 only | Cluster API endpoint is private (VPC-only) |
 | ArgoCD apply last | Needs the cluster running to accept the manifest |
+
+---
+
+## Observability Reference — Prometheus & Grafana
+
+### Port-forward all three dashboards
+
+All services use `ClusterIP` and are not exposed externally. Run these from the **EC2 jump server** (or any host with `kubectl` access to the cluster).
+
+```bash
+# ArgoCD UI  →  https://localhost:8080
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+
+# Prometheus  →  http://localhost:9090
+kubectl port-forward svc/prometheus-kube-prometheus-prometheus -n prometheus 9090:9090
+
+# Grafana  →  http://localhost:3000  (admin / prom-operator)
+kubectl port-forward svc/prometheus-grafana -n prometheus 3000:80
+```
+
+> If you're on the EC2 jump server and want to open the UIs in a local browser, add `-L` SSH tunnels when connecting:
+> ```bash
+> ssh -i your-key.pem ubuntu@<EC2-PUBLIC-IP> \
+>   -L 8080:localhost:8080 \
+>   -L 9090:localhost:9090 \
+>   -L 3000:localhost:3000
+> ```
+
+---
+
+### Prometheus — Verify flask-demo scrape targets
+
+After ArgoCD syncs the `servicemonitor.yaml`, Prometheus should pick up two pod targets.
+
+1. Open **http://localhost:9090/targets** in your browser.
+2. Filter by `flask-demo` to confirm both replicas show **State: UP**.
+
+You can also query from the CLI:
+
+```bash
+# Confirm targets are being scraped
+curl -s http://localhost:9090/api/v1/targets \
+  | jq '.data.activeTargets[] | select(.labels.namespace=="flask-demo") | {job:.labels.job, instance:.labels.instance, health:.health}'
+
+# Quick PromQL — total requests in the last 5 minutes
+curl -sG http://localhost:9090/api/v1/query \
+  --data-urlencode 'query=sum(increase(flask_request_count_total[5m]))' \
+  | jq '.data.result'
+
+# 95th-percentile latency per endpoint
+curl -sG http://localhost:9090/api/v1/query \
+  --data-urlencode 'query=histogram_quantile(0.95, sum by(le,endpoint)(rate(flask_request_latency_seconds_bucket[5m])))' \
+  | jq '.data.result'
+```
+
+---
+
+### Grafana — Create the EKS Cluster Overview dashboard via REST API
+
+Grafana ships with the default password `prom-operator`. Change it on first login or pass it via the env var below.
+
+```bash
+GRAFANA_URL="http://localhost:3000"
+GRAFANA_USER="admin"
+GRAFANA_PASS="prom-operator"
+```
+
+#### 1 — Verify the Prometheus data source is wired up
+
+```bash
+curl -s -u "$GRAFANA_USER:$GRAFANA_PASS" \
+  "$GRAFANA_URL/api/datasources" \
+  | jq '.[].name'
+# Expected output: "Prometheus"
+```
+
+#### 2 — Create the dashboard via API
+
+The JSON below reproduces the EKS Cluster Overview dashboard (node count, pod count, CPU %, memory %, per-node time series, network I/O).
+
+```bash
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  -u "$GRAFANA_USER:$GRAFANA_PASS" \
+  "$GRAFANA_URL/api/dashboards/db" \
+  -d '{
+  "dashboard": {
+    "title": "EKS Cluster Overview",
+    "tags": ["eks","kubernetes"],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "panels": [
+      {
+        "id": 1, "type": "stat", "title": "Nodes",
+        "gridPos": {"x":0,"y":0,"w":4,"h":4},
+        "targets": [{"expr":"count(kube_node_info)","legendFormat":"Nodes","refId":"A"}],
+        "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"value","graphMode":"none"}
+      },
+      {
+        "id": 2, "type": "stat", "title": "Running Pods",
+        "gridPos": {"x":4,"y":0,"w":4,"h":4},
+        "targets": [{"expr":"count(kube_pod_info{phase=\"Running\"})","legendFormat":"Pods","refId":"A"}],
+        "options": {"reduceOptions":{"calcs":["lastNotNull"]},"colorMode":"value","graphMode":"none"}
+      },
+      {
+        "id": 3, "type": "stat", "title": "Cluster CPU %",
+        "gridPos": {"x":8,"y":0,"w":4,"h":4},
+        "targets": [{"expr":"100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))","legendFormat":"CPU %","refId":"A"}],
+        "options": {"reduceOptions":{"calcs":["lastNotNull"]},"unit":"percent","colorMode":"value","graphMode":"none"}
+      },
+      {
+        "id": 4, "type": "stat", "title": "Cluster Memory %",
+        "gridPos": {"x":12,"y":0,"w":4,"h":4},
+        "targets": [{"expr":"100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))","legendFormat":"Mem %","refId":"A"}],
+        "options": {"reduceOptions":{"calcs":["lastNotNull"]},"unit":"percent","colorMode":"value","graphMode":"none"}
+      },
+      {
+        "id": 5, "type": "timeseries", "title": "CPU Usage per Node",
+        "gridPos": {"x":0,"y":4,"w":12,"h":8},
+        "targets": [{"expr":"100 * (1 - rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))","legendFormat":"{{instance}}","refId":"A"}],
+        "fieldConfig": {"defaults":{"unit":"percent"}}
+      },
+      {
+        "id": 6, "type": "timeseries", "title": "Memory Usage per Node",
+        "gridPos": {"x":12,"y":4,"w":12,"h":8},
+        "targets": [{"expr":"100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))","legendFormat":"{{instance}}","refId":"A"}],
+        "fieldConfig": {"defaults":{"unit":"percent"}}
+      },
+      {
+        "id": 7, "type": "timeseries", "title": "Network I/O",
+        "gridPos": {"x":0,"y":12,"w":24,"h":8},
+        "targets": [
+          {"expr":"sum(rate(node_network_receive_bytes_total[5m]))","legendFormat":"RX bytes/s","refId":"A"},
+          {"expr":"sum(rate(node_network_transmit_bytes_total[5m]))","legendFormat":"TX bytes/s","refId":"B"}
+        ],
+        "fieldConfig": {"defaults":{"unit":"Bps"}}
+      }
+    ]
+  },
+  "folderId": 0,
+  "overwrite": true
+}'
+```
+
+A successful response looks like:
+```json
+{"id": 1, "slug": "eks-cluster-overview", "status": "success", "uid": "...", "url": "/d/.../eks-cluster-overview", "version": 1}
+```
+
+Open the dashboard at **http://localhost:3000/d/&lt;uid&gt;/eks-cluster-overview**.
+
+#### 3 — Useful one-liners
+
+```bash
+# List all dashboards
+curl -s -u "$GRAFANA_USER:$GRAFANA_PASS" "$GRAFANA_URL/api/search" | jq '.[] | {uid:.uid, title:.title}'
+
+# Export a dashboard to JSON (for version control)
+curl -s -u "$GRAFANA_USER:$GRAFANA_PASS" "$GRAFANA_URL/api/dashboards/uid/<UID>" | jq '.dashboard' > dashboard-export.json
+
+# Import a previously exported dashboard
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  -u "$GRAFANA_USER:$GRAFANA_PASS" \
+  "$GRAFANA_URL/api/dashboards/db" \
+  -d "{\"dashboard\": $(cat dashboard-export.json), \"folderId\": 0, \"overwrite\": true}"
+
+# Delete a dashboard
+curl -s -X DELETE \
+  -u "$GRAFANA_USER:$GRAFANA_PASS" \
+  "$GRAFANA_URL/api/dashboards/uid/<UID>"
+```
