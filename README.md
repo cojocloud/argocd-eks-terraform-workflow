@@ -522,7 +522,7 @@ kubectl get application -n argocd
 The AWS Application Load Balancer is provisioned by the AWS Load Balancer Controller in response to the Ingress resource — it is **not** tracked by Terraform. If the ALB still exists when Terraform tries to destroy the VPC, the destroy will fail because the ALB holds ENIs inside the subnets.
 
 ```bash
-kubectl delete ingress flask-demo-ingress -n flask-demo
+kubectl delete ingress flask-demo -n flask-demo
 
 # Wait until the ALB is fully deprovisioned (~60s), then confirm
 aws elbv2 describe-load-balancers \
