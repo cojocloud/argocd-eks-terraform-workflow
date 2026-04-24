@@ -492,3 +492,122 @@ curl -s -X DELETE \
   -u "$GRAFANA_USER:$GRAFANA_PASS" \
   "$GRAFANA_URL/api/dashboards/uid/<UID>"
 ```
+
+---
+
+## Teardown — Destroy All Infrastructure
+
+Teardown must be done **in reverse deployment order**. Skipping steps or reversing the sequence will leave orphaned AWS resources (ALBs, ENIs, security groups) that block VPC deletion.
+
+> All `kubectl` commands must be run from the **EC2 jump server** — the API endpoint is private.
+
+---
+
+### Step 1 — Delete the ArgoCD Application
+
+ArgoCD has auto-sync enabled. If you skip this step, it will recreate Kubernetes resources faster than Terraform can delete them.
+
+```bash
+# From the EC2 jump server
+kubectl delete -f k8s/argocd-app.yaml
+
+# Confirm it's gone
+kubectl get application -n argocd
+```
+
+---
+
+### Step 2 — Delete the Ingress (releases the ALB)
+
+The AWS Application Load Balancer is provisioned by the AWS Load Balancer Controller in response to the Ingress resource — it is **not** tracked by Terraform. If the ALB still exists when Terraform tries to destroy the VPC, the destroy will fail because the ALB holds ENIs inside the subnets.
+
+```bash
+kubectl delete ingress flask-demo-ingress -n flask-demo
+
+# Wait until the ALB is fully deprovisioned (~60s), then confirm
+aws elbv2 describe-load-balancers \
+  --query 'LoadBalancers[?contains(LoadBalancerName, `flask-demo`) || contains(LoadBalancerName, `k8s-flask`)].LoadBalancerName' \
+  --region us-east-1
+# Expected: empty list []
+```
+
+---
+
+### Step 3 — Destroy the EKS Cluster
+
+This removes the EKS cluster, node groups, Helm releases (ArgoCD, Prometheus, Grafana, AWS Load Balancer Controller), OIDC provider, and all associated IAM roles.
+
+```bash
+cd eks
+terraform destroy -var-file=variables.tfvars
+```
+
+> This step takes **10–15 minutes**. EKS cluster deletion is slow.
+
+When prompted, type `yes` to confirm.
+
+After completion, verify in the AWS console that:
+- The EKS cluster is gone
+- The node group EC2 instances are terminated
+- The ALB controller IAM role is deleted
+
+---
+
+### Step 4 — Destroy the VPC and EC2
+
+Only run this after Step 3 is fully complete. The EKS module creates security group rules that reference the VPC — if the VPC is deleted first, orphaned rules can block future deployments.
+
+```bash
+cd ../vpc-ec2
+terraform destroy -var-file=variables.tfvars
+```
+
+When prompted, type `yes` to confirm.
+
+**Resources deleted:** EC2 jump server · NAT Gateway · Elastic IP · Internet Gateway · route tables · subnets · security groups · VPC · IAM role + instance profile
+
+---
+
+### Step 5 — (Optional) Delete the S3 State Bucket
+
+The Terraform state bucket is not managed by Terraform itself, so it must be deleted manually. Only do this if you are done with the project entirely — deleting it makes the state irrecoverable.
+
+```bash
+BUCKET="my-eks-tf-state"   # replace with your bucket name
+
+# Empty the bucket first (versioned buckets require deleting all versions)
+aws s3api delete-objects \
+  --bucket $BUCKET \
+  --delete "$(aws s3api list-object-versions \
+    --bucket $BUCKET \
+    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+    --output json)"
+
+# Delete any leftover delete markers
+aws s3api delete-objects \
+  --bucket $BUCKET \
+  --delete "$(aws s3api list-object-versions \
+    --bucket $BUCKET \
+    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
+    --output json)"
+
+# Now delete the bucket
+aws s3api delete-bucket --bucket $BUCKET --region us-east-1
+```
+
+---
+
+### Teardown Order Summary
+
+```
+Step 1            Step 2            Step 3            Step 4            Step 5
+Delete ArgoCD     Delete Ingress    eks destroy       vpc-ec2 destroy   S3 bucket
+Application  ───► (release ALB) ──► (EKS + IAM) ───► (VPC + EC2) ────► (optional)
+```
+
+### Why This Order Matters
+| If you skip...         | What breaks |
+|---|---|
+| Step 1 (ArgoCD delete) | ArgoCD re-creates the Ingress; ALB never goes away |
+| Step 2 (Ingress delete) | ALB holds ENIs in subnets; `vpc-ec2 destroy` fails with dependency error |
+| Doing Step 4 before Step 3 | Security group rules from EKS block VPC deletion |
