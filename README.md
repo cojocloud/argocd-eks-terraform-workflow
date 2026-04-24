@@ -22,6 +22,23 @@ This project automates the provisioning of a private EKS cluster on AWS, along w
 ### Architecture Diagram
 ![Architecture Diagram](./assets/architecture-diagram.gif)
 
+## 📸 Screenshots
+
+### ArgoCD — flask-demo Application (Healthy & Synced)
+> GitOps in action: ArgoCD watches the `k8s/` folder on the `main` branch and automatically deploys all resources. The tree view shows the full application topology — Namespace, Service, Deployment, ReplicaSet, ServiceMonitor — all healthy.
+
+![ArgoCD Application](./assets/argocd-app.png)
+
+### Grafana — EKS Cluster Overview Dashboard
+> Custom dashboard showing live cluster metrics: 2 nodes, 28 running pods, CPU at 3.18%, memory at 25.9%, with per-node CPU/memory time series and network I/O graphs.
+
+![Grafana Dashboard](./assets/grafana-dashboard.png)
+
+### Prometheus — Scrape Targets
+> Prometheus targets page confirming the flask-demo ServiceMonitor is active and scraping `/metrics` from both pod replicas (2/2 up) with sub-5ms scrape duration.
+
+![Prometheus Targets](./assets/prometheus-targets.png)
+
 ## 🚀 Getting Started
 
 ### Prerequisites

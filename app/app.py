@@ -13,14 +13,10 @@ from prometheus_client import (
 app = Flask(__name__)
 
 REQUEST_COUNT = Counter(
-    "flask_request_count",
-    "Total HTTP request count",
-    ["method", "endpoint", "status"],
+    "flask_request_count", "Total HTTP request count", ["method", "endpoint", "status"],
 )
 REQUEST_LATENCY = Histogram(
-    "flask_request_latency_seconds",
-    "HTTP request latency in seconds",
-    ["endpoint"],
+    "flask_request_latency_seconds", "HTTP request latency in seconds", ["endpoint"],
 )
 
 
@@ -34,9 +30,7 @@ def after_request(response):
     if request.path != "/metrics":
         latency = time.time() - g.start_time
         REQUEST_COUNT.labels(
-            method=request.method,
-            endpoint=request.path,
-            status=response.status_code,
+            method=request.method, endpoint=request.path, status=response.status_code,
         ).inc()
         REQUEST_LATENCY.labels(endpoint=request.path).observe(latency)
     return response
