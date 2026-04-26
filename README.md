@@ -1,23 +1,23 @@
-# 🚀 AWS EKS Cluster with ArgoCD, Prometheus, and More - Terraform Project
-[![LinkedIn](https://img.shields.io/badge/Connect%20with%20me%20on-LinkedIn-blue.svg)](https://www.linkedin.com/in/aman-devops/)
-[![Discord](https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/jdzF8kTtw2)
-[![Medium](https://img.shields.io/badge/Medium-12100E?style=for-the-badge&logo=medium&logoColor=white)](https://medium.com/@amanpathakdevops)
-[![GitHub](https://img.shields.io/github/stars/AmanPathak-DevOps.svg?style=social)](https://github.com/AmanPathak-DevOps)
-[![Serverless](https://img.shields.io/badge/Serverless-%E2%9A%A1%EF%B8%8F-blueviolet)](https://www.serverless.com)
+# Production-Grade EKS on AWS — GitOps, Observability, and Load Balancing with Terraform
+
 [![AWS](https://img.shields.io/badge/AWS-%F0%9F%9B%A1-orange)](https://aws.amazon.com)
 [![Terraform](https://img.shields.io/badge/Terraform-%E2%9C%A8-lightgrey)](https://www.terraform.io)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)](https://kubernetes.io)
+[![ArgoCD](https://img.shields.io/badge/ArgoCD-EF7B4D?style=for-the-badge&logo=argo&logoColor=white)](https://argoproj.github.io/cd)
 
-Welcome to the Terraform project repository for setting up a fully functional, private AWS EKS cluster integrated with essential tools like ArgoCD, Prometheus, and Grafana. This repository provides everything you need to deploy and manage a secure and scalable Kubernetes environment on AWS.
+This repository provisions a production-ready, private EKS cluster on AWS using Terraform — end to end. It covers the full stack: networking, compute, GitOps delivery via ArgoCD, metrics collection via Prometheus, dashboards via Grafana, and ingress via the AWS Load Balancer Controller. A containerized Flask demo app is included to validate the entire pipeline from code push to live traffic.
 
-## 🌟 Overview
+## Overview
 
-This project automates the provisioning of a private EKS cluster on AWS, along with the deployment of key Kubernetes management and monitoring tools using Terraform and Helm. The infrastructure is designed to be robust, allowing you to easily manage, scale, and monitor your Kubernetes resources.
+The infrastructure is split into two independently deployable Terraform modules — `vpc-ec2` and `eks` — applied in sequence. Everything beyond the cluster itself (ArgoCD, Prometheus, Grafana, ALB Controller) is deployed via Helm. The Flask app is delivered through ArgoCD watching the `k8s/` directory on the `main` branch.
 
-### Key Features:
-- **Private EKS Cluster**: A secure EKS setup running within a private VPC.
-- **Infrastructure as Code**: Automated deployment using Terraform, ensuring repeatability and scalability.
-- **Helm Integration**: Deployment of ArgoCD, Prometheus, and Grafana using Helm charts.
-- **Modular Design**: The project is structured into reusable modules for easier management and customization.
+### What's included
+- **Private EKS Cluster** — API endpoint restricted to the VPC; accessed via an EC2 jump server using AWS SSM
+- **Dual node groups** — on-demand (`t3a.medium`) for stable workloads, spot instances for cost-efficient burst capacity
+- **GitOps with ArgoCD** — auto-sync, self-heal, and pruning enabled; any push to `k8s/` triggers a deployment
+- **Observability stack** — Prometheus scrapes a custom `ServiceMonitor`; Grafana ships with a pre-built EKS cluster overview dashboard
+- **AWS Load Balancer Controller** — provisions an internet-facing ALB for the Flask app via a Kubernetes `Ingress` resource
+- **Modular Terraform layout** — `vpc-ec2` and `eks` modules are independent, making it straightforward to swap, extend, or reuse either layer
 
 ### Architecture Diagram
 ![Architecture Diagram](./assets/architecture-diagram.gif)
@@ -82,15 +82,8 @@ The following errors and issues were found and resolved before a clean plan coul
 
 ---
 
-### 1. Missing `tls` and `random` provider declarations (`eks/backend.tf`)
 
-**Error** — `terraform init` succeeded but `terraform validate` would have failed at runtime because `module/eks/gather.tf` uses a `data "tls_certificate"` resource and `module/eks/iam.tf` uses `resource "random_integer"`, neither of which had their providers declared in the root `eks/` module.
-
-**Fix** — Added `tls` (`~> 4.0`) and `random` (`~> 3.0`) to `required_providers` in `eks/backend.tf`.
-
----
-
-### 2. `eks` plan: `no matching EC2 VPC found` / `no matching EC2 Security Group found`
+### 1. `eks` plan: `no matching EC2 VPC found` / `no matching EC2 Security Group found`
 
 **Error** — Running `terraform plan` in the `eks/` module produced:
 ```
